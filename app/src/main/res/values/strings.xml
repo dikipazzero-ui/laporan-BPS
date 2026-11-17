@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">Laporan Harian BPS</string>
+    <string name="subtitle_housing">Perumahan Bumi Papan Selaras</string>
+    <string name="sign_in_google">Masuk dengan Google</string>
+    <string name="nav_reports">Laporan</string>
+    <string name="nav_summary">Rekap Bulan</string>
+    <string name="nav_chat">Live Chat</string>
+    <string name="btn_create_report">Buat Laporan</string>
+    <string name="btn_copy">Salin</string>
+    <string name="btn_whatsapp">WhatsApp</string>
+    <string name="btn_export_csv">Export CSV</string>
+    <string name="btn_print_pdf">Cetak PDF</string>
+    <string name="cd_app_logo">Logo Laporan Harian BPS</string>
+    <string name="cd_hero_banner">Ilustrasi Perumahan Bumi Papan Selaras</string>
+    <string name="cd_empty_reports">Belum ada laporan harian</string>
+    <string name="cd_profile_avatar">Foto profil anggota</string>
+    <string name="cd_attach_photo">Lampirkan foto</string>
+    <string name="cd_camera">Ambil foto dari kamera</string>
+    <string name="cd_gallery">Pilih foto dari galeri</string>
+    <string name="cd_record_voice">Rekam pesan suara</string>
+    <string name="cd_send_message">Kirim pesan</string>
+</resources>

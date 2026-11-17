@@ -1,0 +1,173 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile and active team pointer.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase UID."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name."
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address (private)."
+        },
+        "photoBase64": {
+          "type": "string",
+          "description": "Optional compressed JPEG avatar encoded in Base64."
+        },
+        "activeTeamId": {
+          "type": "string",
+          "description": "Currently selected team code."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on update."
+        }
+      },
+      "required": ["userId", "displayName", "createdAt", "updatedAt"]
+    },
+    "JoinedTeam": {
+      "title": "JoinedTeam",
+      "description": "Reference to a team joined by the user.",
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "teamName": { "type": "string" },
+        "teamCode": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "MEMBER"] },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["teamId", "teamName", "teamCode", "role", "joinedAt"]
+    },
+    "Team": {
+      "title": "Team",
+      "description": "Team workspace identified by its unique Team Code.",
+      "type": "object",
+      "properties": {
+        "teamCode": { "type": "string" },
+        "name": { "type": "string" },
+        "locationName": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["teamCode", "name", "locationName", "ownerId", "createdAt", "updatedAt"]
+    },
+    "TeamMember": {
+      "title": "TeamMember",
+      "description": "Member profile visible within a team.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "MEMBER"] },
+        "photoBase64": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "role", "joinedAt", "updatedAt"]
+    },
+    "DailyReport": {
+      "title": "DailyReport",
+      "description": "Daily operational report for Perumahan Bumi Papan Selaras.",
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "memberName": { "type": "string" },
+        "dayName": { "type": "string" },
+        "dateLabel": { "type": "string" },
+        "timeLabel": { "type": "string" },
+        "yearMonth": { "type": "string" },
+        "dayOfMonth": { "type": "integer" },
+        "reportTimestampMillis": { "type": "integer" },
+        "description": { "type": "string" },
+        "photos": {
+          "type": "array",
+          "description": "Up to 4 compressed JPEG images encoded in Base64."
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "teamId",
+        "authorId",
+        "memberName",
+        "dayName",
+        "dateLabel",
+        "timeLabel",
+        "yearMonth",
+        "dayOfMonth",
+        "reportTimestampMillis",
+        "description",
+        "photos",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Real-time team chat message supporting text, image, and voice note.",
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderPhotoBase64": { "type": "string" },
+        "type": { "type": "string", "enum": ["TEXT", "IMAGE", "AUDIO"] },
+        "text": { "type": "string" },
+        "imageBase64": { "type": "string" },
+        "audioBase64": { "type": "string" },
+        "audioDurationSec": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "teamId",
+        "senderId",
+        "senderName",
+        "type",
+        "text",
+        "audioDurationSec",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private profile document per authenticated user."
+    },
+    "/users/{userId}/joinedTeams/{teamId}": {
+      "schema": { "$ref": "#/entities/JoinedTeam" },
+      "description": "Teams joined by the user."
+    },
+    "/teams/{teamId}": {
+      "schema": { "$ref": "#/entities/Team" },
+      "description": "Team configuration keyed by unique uppercase Team Code."
+    },
+    "/teams/{teamId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/TeamMember" },
+      "description": "Team membership records and team-visible avatars."
+    },
+    "/teams/{teamId}/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/DailyReport" },
+      "description": "Real-time daily reports submitted by team members."
+    },
+    "/teams/{teamId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Real-time team chat messages (text, photos, voice notes)."
+    }
+  }
+}

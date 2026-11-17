@@ -1,0 +1,279 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Deny all reads and writes by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTeamCode(code) {
+      return code is string && code.size() >= 4 && code.size() <= 20 && code.matches('^[A-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isTeamMember(teamId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
+    }
+
+    function isTeamOwner(teamId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/teams/$(teamId)) &&
+        get(/databases/$(database)/documents/teams/$(teamId)).data.ownerId == request.auth.uid;
+    }
+
+    // --- Validation Helpers ---
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+             (!('photoBase64' in data) || (data.photoBase64 is string && data.photoBase64.size() <= 250000)) &&
+             (!('activeTeamId' in data) || (data.activeTeamId is string && isValidTeamCode(data.activeTeamId)));
+    }
+
+    function isValidJoinedTeam(data) {
+      return data.teamId is string && isValidTeamCode(data.teamId) &&
+             data.teamName is string && data.teamName.size() >= 2 && data.teamName.size() <= 80 &&
+             data.teamCode is string && isValidTeamCode(data.teamCode) &&
+             data.role in ['ADMIN', 'MEMBER'];
+    }
+
+    function isValidTeam(data) {
+      return data.teamCode is string && isValidTeamCode(data.teamCode) &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+             data.locationName is string && data.locationName.size() >= 2 && data.locationName.size() <= 100 &&
+             data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128;
+    }
+
+    function isValidTeamMember(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             data.role in ['ADMIN', 'MEMBER'] &&
+             (!('photoBase64' in data) || (data.photoBase64 is string && data.photoBase64.size() <= 250000));
+    }
+
+    function isValidPhotoList(photos) {
+      return photos is list &&
+             photos.size() <= 4 &&
+             (photos.size() < 1 || (photos[0] is string && photos[0].size() >= 10 && photos[0].size() <= 220000)) &&
+             (photos.size() < 2 || (photos[1] is string && photos[1].size() >= 10 && photos[1].size() <= 220000)) &&
+             (photos.size() < 3 || (photos[2] is string && photos[2].size() >= 10 && photos[2].size() <= 220000)) &&
+             (photos.size() < 4 || (photos[3] is string && photos[3].size() >= 10 && photos[3].size() <= 220000));
+    }
+
+    function isValidDailyReport(data) {
+      return data.teamId is string && isValidTeamCode(data.teamId) &&
+             data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128 &&
+             data.memberName is string && data.memberName.size() >= 1 && data.memberName.size() <= 60 &&
+             data.dayName is string && data.dayName.size() >= 3 && data.dayName.size() <= 20 &&
+             data.dateLabel is string && data.dateLabel.size() >= 5 && data.dateLabel.size() <= 40 &&
+             data.timeLabel is string && data.timeLabel.size() >= 4 && data.timeLabel.size() <= 10 &&
+             data.yearMonth is string && data.yearMonth.matches('^[0-9]{4}-[0-9]{2}$') &&
+             data.dayOfMonth is int && data.dayOfMonth >= 1 && data.dayOfMonth <= 31 &&
+             data.reportTimestampMillis is int && data.reportTimestampMillis > 0 &&
+             data.description is string && data.description.size() >= 1 && data.description.size() <= 2000 &&
+             isValidPhotoList(data.photos);
+    }
+
+    function isValidChatMessage(data) {
+      return data.teamId is string && isValidTeamCode(data.teamId) &&
+             data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 60 &&
+             (!('senderPhotoBase64' in data) || (data.senderPhotoBase64 is string && data.senderPhotoBase64.size() <= 250000)) &&
+             data.type in ['TEXT', 'IMAGE', 'AUDIO'] &&
+             data.text is string && data.text.size() <= 1500 &&
+             (!('imageBase64' in data) || (data.imageBase64 is string && data.imageBase64.size() <= 300000)) &&
+             (!('audioBase64' in data) || (data.audioBase64 is string && data.audioBase64.size() <= 350000)) &&
+             data.audioDurationSec is int && data.audioDurationSec >= 0 && data.audioDurationSec <= 120 &&
+             (
+               (data.type == 'TEXT' && data.text.size() >= 1) ||
+               (data.type == 'IMAGE' && 'imageBase64' in data && data.imageBase64.size() >= 10) ||
+               (data.type == 'AUDIO' && 'audioBase64' in data && data.audioBase64.size() >= 10)
+             );
+    }
+
+    // --- Collection Rules ---
+
+    // 1. Private User Profile (strictly owner-only)
+    match /users/{userId} {
+      allow list: if isSignedIn() && request.auth.uid == userId;
+      allow get, delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'photoBase64', 'activeTeamId', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'photoBase64', 'activeTeamId', 'updatedAt']);
+
+      // User's Joined Teams Subcollection
+      match /joinedTeams/{teamId} {
+        allow list: if isSignedIn() && request.auth.uid == userId;
+        allow get, delete: if isSignedIn() && isValidId(userId) && isValidTeamCode(teamId) && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidTeamCode(teamId) &&
+                         request.auth.uid == userId &&
+                         incoming().teamId == teamId &&
+                         incoming().teamCode == teamId &&
+                         incoming().keys().hasAll(['teamId', 'teamName', 'teamCode', 'role', 'joinedAt']) &&
+                         incoming().keys().hasOnly(['teamId', 'teamName', 'teamCode', 'role', 'joinedAt']) &&
+                         incoming().joinedAt is timestamp && incoming().joinedAt <= request.time &&
+                         isValidJoinedTeam(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidTeamCode(teamId) &&
+                         request.auth.uid == userId &&
+                         isValidJoinedTeam(incoming()) &&
+                         incoming().teamId == existing().teamId &&
+                         incoming().teamCode == existing().teamCode &&
+                         incoming().joinedAt == existing().joinedAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['teamName', 'role']);
+      }
+    }
+
+    // 2. Teams (keyed by Team Code)
+    match /teams/{teamId} {
+      // Direct lookup by exact Team Code allowed for signed-in users; listing is strictly scoped to teams owned by the user
+      allow get: if isSignedIn() && isValidTeamCode(teamId);
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidTeamCode(teamId) &&
+                       incoming().teamCode == teamId &&
+                       incoming().ownerId == request.auth.uid &&
+                       incoming().keys().hasAll(['teamCode', 'name', 'locationName', 'ownerId', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['teamCode', 'name', 'locationName', 'ownerId', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidTeam(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidTeamCode(teamId) &&
+                       isValidTeam(incoming()) &&
+                       existing().ownerId == request.auth.uid &&
+                       incoming().ownerId == existing().ownerId &&
+                       incoming().teamCode == existing().teamCode &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'locationName', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidTeamCode(teamId) && existing().ownerId == request.auth.uid;
+
+      // 2a. Team Members
+      match /members/{memberId} {
+        allow get: if isSignedIn() && isValidTeamCode(teamId) && isValidId(memberId) && (request.auth.uid == memberId || isTeamMember(teamId));
+        allow list: if isSignedIn() && isValidTeamCode(teamId) && isTeamMember(teamId);
+
+        allow create: if isSignedIn() &&
+                         isValidTeamCode(teamId) &&
+                         isValidId(memberId) &&
+                         request.auth.uid == memberId &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'displayName', 'role', 'joinedAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'displayName', 'role', 'photoBase64', 'joinedAt', 'updatedAt']) &&
+                         incoming().joinedAt is timestamp && incoming().joinedAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidTeamMember(incoming()) &&
+                         exists(/databases/$(database)/documents/teams/$(teamId)) &&
+                         (incoming().role == 'MEMBER' || get(/databases/$(database)/documents/teams/$(teamId)).data.ownerId == request.auth.uid);
+
+        allow update: if isSignedIn() &&
+                         isValidTeamCode(teamId) &&
+                         isValidId(memberId) &&
+                         request.auth.uid == memberId &&
+                         isValidTeamMember(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().role == existing().role &&
+                         incoming().joinedAt == existing().joinedAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoBase64', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidTeamCode(teamId) && isValidId(memberId) && (request.auth.uid == memberId || isTeamOwner(teamId));
+      }
+
+      // 2b. Daily Reports
+      match /reports/{reportId} {
+        allow get: if isSignedIn() && isValidTeamCode(teamId) && isValidId(reportId) && isTeamMember(teamId);
+        allow list: if isSignedIn() && isValidTeamCode(teamId) && isTeamMember(teamId);
+
+        allow create: if isSignedIn() &&
+                         isValidTeamCode(teamId) &&
+                         isValidId(reportId) &&
+                         isTeamMember(teamId) &&
+                         incoming().teamId == teamId &&
+                         incoming().authorId == request.auth.uid &&
+                         incoming().keys().hasAll(['teamId', 'authorId', 'memberName', 'dayName', 'dateLabel', 'timeLabel', 'yearMonth', 'dayOfMonth', 'reportTimestampMillis', 'description', 'photos', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['teamId', 'authorId', 'memberName', 'dayName', 'dateLabel', 'timeLabel', 'yearMonth', 'dayOfMonth', 'reportTimestampMillis', 'description', 'photos', 'createdAt', 'updatedAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         isValidDailyReport(incoming());
+
+        allow update: if isSignedIn() &&
+                         isValidTeamCode(teamId) &&
+                         isValidId(reportId) &&
+                         isTeamMember(teamId) &&
+                         isValidDailyReport(incoming()) &&
+                         existing().authorId == request.auth.uid &&
+                         incoming().teamId == existing().teamId &&
+                         incoming().authorId == existing().authorId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['memberName', 'dayName', 'dateLabel', 'timeLabel', 'yearMonth', 'dayOfMonth', 'reportTimestampMillis', 'description', 'photos', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidTeamCode(teamId) && isValidId(reportId) && isTeamMember(teamId) && (existing().authorId == request.auth.uid || isTeamOwner(teamId));
+      }
+
+      // 2c. Live Chat Messages
+      match /messages/{messageId} {
+        allow get: if isSignedIn() && isValidTeamCode(teamId) && isValidId(messageId) && isTeamMember(teamId);
+        allow list: if isSignedIn() && isValidTeamCode(teamId) && isTeamMember(teamId);
+
+        allow create: if isSignedIn() &&
+                         isValidTeamCode(teamId) &&
+                         isValidId(messageId) &&
+                         isTeamMember(teamId) &&
+                         incoming().teamId == teamId &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().keys().hasAll(['teamId', 'senderId', 'senderName', 'type', 'text', 'audioDurationSec', 'createdAt']) &&
+                         incoming().keys().hasOnly(['teamId', 'senderId', 'senderName', 'senderPhotoBase64', 'type', 'text', 'imageBase64', 'audioBase64', 'audioDurationSec', 'createdAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         isValidChatMessage(incoming());
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() && isValidTeamCode(teamId) && isValidId(messageId) && isTeamMember(teamId) && (existing().senderId == request.auth.uid || isTeamOwner(teamId));
+      }
+    }
+  }
+}
