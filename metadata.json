@@ -2,5 +2,7 @@
   "name": "Laporan Harian BPS",
   "description": "Aplikasi laporan harian tim, rekap bulanan (WhatsApp, CSV, PDF), dan live chat online untuk Perumahan Bumi Papan Selaras.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
